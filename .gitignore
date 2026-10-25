@@ -1,0 +1,12 @@
+*
+!/.gitignore
+!/README.MD
+!/LICENSE
+!/requirements.txt
+!/patch.py
+!/patcher/
+!/patcher/*.py
+!/patcher/recipes/
+!/patcher/recipes/*.json
+!/third-party/
+!/third-party/pspmedia-LICENSE
