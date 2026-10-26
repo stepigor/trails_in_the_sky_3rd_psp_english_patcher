@@ -14,6 +14,7 @@ from banks import split_script
 from message_groups import paginate
 from native_ui import apply_ui
 from battle_text import transplant as transplant_monster,transplant_variant
+from battle_quotes import transplant as transplant_battle_quotes
 from battle_packs import repack_records,pkc_members,repack_pkc,description,translate_copy
 from movies import MOVIES
 from graphics import title_model,convert_texture
@@ -206,9 +207,18 @@ def build(iso_path,pc_root,output,recipe_root,movies_dir=None):
     for path,sha in pack_recipe['source_hashes'].items():
         require(hashlib.sha256(iso.get(path)).hexdigest()==sha,'Monster pack source mismatch')
     runtime_path='PSP_GAME/USRDIR/data_3rd/battle2/dtpack.da2'
+    speech=json.loads((recipe_root/'battle-quotes-recipe.json').read_text())
+    runtime_updates={fid:(old,new) for fid,(old,new,_) in monster_updates.items()}
+    print('Transferring battle speech and random phrase lists',flush=True)
+    for entry in speech['entries']:
+        path='PSP_GAME/USRDIR/data_3rd/battle/dat/'+entry['psp_file'];old=iso.get(path)
+        new=transplant_battle_quotes(old,battle_donor(entry['pc_member']),entry)
+        fid=int(entry['psp_file'][2:8],16)
+        require(fid not in runtime_updates,'Battle speech and monster records overlap')
+        replacements[path]=new;runtime_updates[fid]=(old,new)
     def runtime_member(fid,data):
-        if fid not in monster_updates:return data
-        old,new,_=monster_updates[fid];require(data==old,'Runtime monster differs from standalone source');return new
+        if fid not in runtime_updates:return data
+        old,new=runtime_updates[fid];require(data==old,'Runtime battle record differs from standalone source');return new
     packed,runtime_report=repack_records(falcom3(iso.get(runtime_path)),1,runtime_member)
     replacements[runtime_path]=encode_falcom3(packed,compress=True)
     bestiary_path='PSP_GAME/USRDIR/data_3rd/monsnote/monsnote.dt2'
