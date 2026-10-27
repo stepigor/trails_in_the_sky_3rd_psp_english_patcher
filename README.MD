@@ -46,7 +46,7 @@ This repository contains code and numeric conversion recipes: offsets, mappings,
 
 ## ⚙️ Compatibility
 
-Tested on **PSP-3000, CFW 6.61 ARK-4**.
+Testing in progress on **PSP-3000, CFW 6.61 ARK-4**.
 
 ## 📄 Third-party components and references
 
