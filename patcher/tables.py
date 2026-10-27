@@ -121,14 +121,27 @@ def string_array(data):
 
 
 def transplant_string_array(psp,pc):
+    # Town labels include a category byte immediately after the string's NUL.
+    # The location banner indexes a native prefix table with this byte. Empty
+    # placeholders may alias a bare terminator and have no category of their own.
     old,new=string_array(psp),string_array(pc)
     require(len(old)==len(new),'String-array identity count differs')
+    categories=[]
+    for i,text in enumerate(old):
+        end=u16(psp,2+2*i)+len(text)
+        require(text==b'\0' or end<len(psp),'Missing town category byte')
+        category=0 if text==b'\0' else psp[end]
+        require(category<16,'Invalid town category byte')
+        categories.append(category)
     out=bytearray(struct.pack('<H',len(old))+bytes(2*len(old)));seen={}
-    for i,text in enumerate(new):
-        if text not in seen:seen[text]=len(out);out.extend(text)
-        require(seen[text]<65536,'String-array pointer overflow')
-        struct.pack_into('<H',out,2+2*i,seen[text])
+    for i,(text,category) in enumerate(zip(new,categories)):
+        record=text+bytes([category])
+        if record not in seen:seen[record]=len(out);out.extend(record)
+        require(seen[record]<65536,'String-array pointer overflow')
+        struct.pack_into('<H',out,2+2*i,seen[record])
     require(string_array(bytes(out))==new,'Rebuilt counted strings differ')
+    require(all(out[u16(out,2+2*i)+len(text)]==category for i,(text,category) in enumerate(zip(new,categories))),
+            'Town category byte changed')
     return bytes(out),{'records':len(old),'changed_fields':sum(a!=b for a,b in zip(old,new))}
 
 
