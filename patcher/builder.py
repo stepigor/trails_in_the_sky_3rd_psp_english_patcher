@@ -12,14 +12,14 @@ from scena import Script
 from archives import pc_file,repack_cclm as repack_uncompressed,append_iso_files,encode_falcom3
 from banks import split_script
 from message_groups import paginate
-from native_ui import apply_ui
+from native_ui import apply_ui,apply_shop_element_labels
 from battle_text import transplant as transplant_monster,transplant_variant
 from battle_quotes import transplant as transplant_battle_quotes
 from battle_packs import repack_records,pkc_members,repack_pkc,description,translate_copy
 from movies import MOVIES
 from graphics import title_model,convert_texture
 from text_layout import reflow
-from tables import LAYOUTS,transplant_rows,transplant_string_array,transplant_chain,transplant_fish,transplant_memo,transplant_quests
+from tables import LAYOUTS,transplant_rows,transplant_string_array,transplant_chain,transplant_fish,transplant_memo,transplant_quests,transplant_shops
 
 
 def family(name):
@@ -166,11 +166,12 @@ def build(iso_path,pc_root,output,recipe_root,movies_dir=None):
     for path in iso.entries:
         name=Path(path).name.lower()
         if '/text/' not in path.lower():continue
-        if name not in LAYOUTS and name not in ['t_town._dt','t_fish._dt','t_chain._dt','t_title._dt'] and not (name.startswith('t_book') and name!='t_book00._dt'):continue
+        if name not in LAYOUTS and name not in ['t_town._dt','t_fish._dt','t_chain._dt','t_title._dt','t_shop._dt'] and not (name.startswith('t_book') and name!='t_book00._dt'):continue
         try:
             psp=iso.get(path);pc=pc_file(pc_root,'ED6_DT22',name)
             if name=='t_memo._dt':data,info=transplant_memo(psp,pc,pc_file(pc_root,'ED6_DT22','t_ittxt._dt'))
             elif name=='t_quest._dt':data,info=transplant_quests(psp,pc)
+            elif name=='t_shop._dt':data,info=transplant_shops(psp,pc)
             elif name in LAYOUTS:data,info=transplant_rows(psp,pc,name)
             elif name=='t_town._dt':data,info=transplant_string_array(psp,pc)
             elif name=='t_fish._dt':data,info=transplant_fish(psp,pc)
@@ -288,7 +289,7 @@ def build(iso_path,pc_root,output,recipe_root,movies_dir=None):
     boot=iso.get('PSP_GAME/SYSDIR/BOOT.BIN')
     native=apply_ui(boot,(pc_root/'ed6_win3.exe').read_bytes(),ui_recipe)
     from journal_layout import apply_door_layout,apply_chapter_separator
-    native=apply_chapter_separator(apply_door_layout(native))
+    native=apply_shop_element_labels(apply_chapter_separator(apply_door_layout(native)))
     replacements['PSP_GAME/SYSDIR/BOOT.BIN']=native
     replacements['PSP_GAME/SYSDIR/EBOOT.BIN']=native
     replacements['PSP_GAME/PARAM.SFO']=sfo_title(iso.get('PSP_GAME/PARAM.SFO'),'Trails in the Sky the 3rd')

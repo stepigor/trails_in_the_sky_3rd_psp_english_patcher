@@ -82,6 +82,8 @@ def transplant_rows(psp,pc,name,row_mapping=None,field_overrides=None):
         other=by_id.get(identity,row)
         if field_overrides and row.identity in field_overrides:
             other=Row(other.index,other.identity,other.start,other.end,other.prefix,field_overrides[row.identity])
+        if name=='t_magic._dt' and row.identity==260:
+            other=Row(other.index,other.identity,other.start,other.end,other.prefix,mutable_craft_fields(row.fields,other.fields))
         require(len(row.fields)==len(other.fields),f'Table field-count mismatch {name}:{row.identity}')
         prefix=bytearray(row.prefix)
         if name.startswith('t_quiz'):
@@ -107,6 +109,56 @@ def transplant_rows(psp,pc,name,row_mapping=None,field_overrides=None):
         if name.startswith('t_quiz'):a[2:4]=b[2:4]
         require(a==b,'Non-text PSP table bytes changed')
     return bytes(out),{'records':len(source),'changed_fields':changed,'mapping':mapping}
+
+
+def mutable_craft_fields(source,donor):
+    # ULJM05353 updates craft 260 when Tita changes equipment. The native
+    # routine writes a two-byte name suffix at byte 16 and copies 65 bytes
+    # of description at byte 16. Preserve these writable slots and their
+    # terminators so neither update can overwrite the following skill.
+    require(len(source)==len(donor)==2 and len(source[0])==19 and source[0][-1:]==b'\0',
+            'Unknown mutable craft name layout')
+    name,description=donor
+    require(name.endswith(b' 2\0') and len(name[:-3])<=16,'Unknown mutable craft donor name')
+    head,separator,body=description[:-1].partition(b' - ')
+    require(separator and len(head+separator)<=16 and description.endswith(b'\0'),
+            'Unknown mutable craft donor description')
+    name=name[:-3].ljust(16,b' ')+source[0][16:]
+    description=(head+separator).ljust(16,b' ')+body+b'\0'
+    return [name,description.ljust(16+65,b'\0')]
+
+
+def shop_rows(data):
+    header=u16(data);require(header>0 and header%2==0 and header<=len(data),'Invalid shop table header')
+    pointers=[u16(data,p) for p in range(0,header,2)]
+    starts=sorted(set(p for p in pointers if p))
+    require(starts and starts[0]==header and all(header<=p<len(data) for p in starts),'Invalid shop record pointer')
+    ends=dict(zip(starts,starts[1:]+[len(data)]));rows={}
+    for i,start in enumerate(pointers):
+        if not start:continue
+        end=ends[start];require(start+18<=end,'Truncated shop record')
+        items,title=u16(data,start+14),u16(data,start+16)
+        require(title==start+18 and title<items<=end and text_end(data,title,items)==items,
+                'Invalid shop title or inventory pointers')
+        rows[i]=(data[start:start+18],data[title:items],data[items:end])
+    return header,rows
+
+
+def transplant_shops(psp,pc):
+    header,source=shop_rows(psp);other_header,donor=shop_rows(pc)
+    require(header==other_header and source.keys()==donor.keys(),'Shop identities differ')
+    out=bytearray(header)
+    for i,(prefix,title,inventory) in source.items():
+        other,translated,_=donor[i]
+        require(prefix[:2]==other[:2],'Shop record identity differs')
+        start=len(out);require(start+18+len(translated)+len(inventory)<65536,'Shop table pointer overflow')
+        struct.pack_into('<H',out,2*i,start)
+        new=bytearray(prefix);struct.pack_into('<HH',new,14,start+18+len(translated),start+18)
+        out.extend(new+translated+inventory)
+    _,rebuilt=shop_rows(bytes(out))
+    require(all(a[0][:14]==rebuilt[i][0][:14] and a[2]==rebuilt[i][2] and rebuilt[i][1]==donor[i][1]
+                for i,a in source.items()),'Shop parameters or inventory changed')
+    return bytes(out),{'records':len(source),'changed_fields':sum(a[1]!=donor[i][1] for i,a in source.items())}
 
 
 def string_array(data):
