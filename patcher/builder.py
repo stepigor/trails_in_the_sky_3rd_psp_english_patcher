@@ -181,9 +181,22 @@ def build(iso_path,pc_root,output,recipe_root,movies_dir=None):
         except (FormatError,ValueError) as e:table_reports.append(dict(file=name,status='unresolved',error=str(e)))
     plain=json.loads((recipe_root/'plain-text-recipe.json').read_text())
     require(hashlib.sha256(pc_exe).hexdigest()==plain['pc_exe_sha256'],'Plain-text PC donor hash mismatch')
+    plain_paths = set()
     for entry in plain['files']:
-        require(hashlib.sha256(iso.get(entry['path'])).hexdigest()==entry['source_sha256'],'Plain-text PSP donor hash mismatch')
-        replacements[entry['path']]=b''.join(bytes([p['control']]) if 'control' in p else pc_exe[p['pc'][0]:p['pc'][0]+p['pc'][1]] for p in entry['parts'])
+        path = entry['path']
+        original = iso.get(path)
+        require(hashlib.sha256(original).hexdigest() == entry['source_sha256'], 'Plain-text PSP donor hash mismatch')
+        pieces = []
+        for part in entry['parts']:
+            if 'control' in part:
+                pieces.append(bytes([part['control']]))
+                continue
+            source = original if 'psp' in part else pc_exe
+            offset, length = part['psp'] if 'psp' in part else part['pc']
+            require(0 <= offset and 0 < length and offset + length <= len(source), 'Plain-text slice outside source')
+            pieces.append(source[offset:offset + length])
+        replacements[path] = b''.join(pieces)
+        plain_paths.add(path)
     monster=json.loads((recipe_root/'battle-text-recipe.json').read_text())
     require(sha256_file(pc_root/'ED6_DT30.dir')==monster['pc_directory_sha256'],'PC monster directory hash mismatch')
     battle_donors={}
@@ -256,7 +269,7 @@ def build(iso_path,pc_root,output,recipe_root,movies_dir=None):
     for path,changes in packed_graphics.items():replacements[path]=repack_pkc(iso.get(path),changes)
     # The engine also loads cached copies of tables from start.dat and other
     # containers. Replace each copy only after matching its original bytes.
-    resource_updates={Path(p).name.lower():(iso.get(p),d) for p,d in replacements.items() if '/text/' in p or '/battle/dat/' in p or '/monsnote/' in p or p.endswith(('.it3','.itp','.pkc','.da2'))}
+    resource_updates={Path(p).name.lower():(iso.get(p),d) for p,d in replacements.items() if p in plain_paths or '/text/' in p or '/battle/dat/' in p or '/monsnote/' in p or p.endswith(('.it3','.itp','.pkc','.da2'))}
     cached_copies=[];cache_conflicts=[]
     print('Updating cached copies of localized resources',flush=True)
     with Path(iso_path).open('rb') as f:

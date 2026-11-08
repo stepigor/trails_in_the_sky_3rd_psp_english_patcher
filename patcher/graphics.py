@@ -24,11 +24,26 @@ def decode_ch(data,width,mode):
     return Image.frombytes('RGBA',(width,height),bytes(out))
 
 
-def indexed_image(image):
+def indexed_image(image, transparent_fills=()):
     from PIL import Image
     q=image.convert('RGBA').quantize(colors=256,method=Image.Quantize.FASTOCTREE,dither=Image.Dither.NONE)
     palette=bytes(q.getpalette('RGBA'))
-    return pack_indexed(*image.size,palette,q.tobytes())
+    pixels = bytearray(q.tobytes())
+    if transparent_fills:
+        # Clear only the selected sprite backing after quantization, so the
+        # palette and all neighboring sprites retain their original colors.
+        transparent = next((i // 4 for i in range(3, len(palette), 4) if palette[i] == 0), None)
+        require(transparent is not None, 'Atlas has no transparent palette entry')
+        for operation in transparent_fills:
+            left, top, right, bottom = operation['box']
+            require(0 <= left <= right < image.width and 0 <= top <= bottom < image.height,
+                    'Transparent fill exceeds atlas')
+            backing = tuple(operation['fill'])
+            for y in range(top, bottom + 1):
+                for x in range(left, right + 1):
+                    if image.getpixel((x, y)) == backing:
+                        pixels[y * image.width + x] = transparent
+    return pack_indexed(*image.size,palette,pixels)
 
 
 def convert_texture(original,donor,recipe,pc_exe=b''):
@@ -71,7 +86,8 @@ def convert_texture(original,donor,recipe,pc_exe=b''):
             require(w<=limit,'English graphic label exceeds allocated width')
             xx=x+(limit-w)//2 if operation.get('center') else x
             draw.text((xx,y),line,font=font,fill=color,stroke_width=operation.get('stroke',0),stroke_fill=(0,0,0,255));y+=spacing
-    return indexed_image(target)
+    transparent_fills = [operation for operation in recipe.get('overlays', ()) if operation.get('transparent_fill')]
+    return indexed_image(target, transparent_fills)
 
 
 def pack_indexed(width,height,palette,pixels):
